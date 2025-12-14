@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:\\Users\\benhe\\.claude-worktrees\\bt-printer\\interesting-williams\" log --oneline)",
+      "Bash(python -c:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
