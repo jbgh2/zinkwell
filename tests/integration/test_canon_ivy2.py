@@ -335,3 +335,188 @@ class TestCanonIvy2Settings:
         assert settings["auto_power_off"] == 10
         assert settings["photos_printed"] == 100
         printer.disconnect()
+
+    def test_set_setting_auto_power_off(self):
+        """set_setting should send auto_power_off value."""
+        # Set setting uses flag_2=True which changes the header
+        set_settings_prefix = bytearray(8)
+        struct.pack_into(">H", set_settings_prefix, 0, START_CODE)
+        struct.pack_into(">hb", set_settings_prefix, 2, 1, 32)
+        struct.pack_into(">HB", set_settings_prefix, 5, 259, 1)  # flag_2=True adds 1
+
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(set_settings_prefix): build_response(ACK_SETTING_ACCESSORY),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        printer.set_setting("auto_power_off", 5)
+
+        # Verify command was sent
+        assert len(mock.sent_commands) == 2  # session + set_setting
+        printer.disconnect()
+
+    def test_set_setting_invalid_key_raises(self):
+        """set_setting with unknown key should raise ValueError."""
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        with pytest.raises(ValueError) as exc_info:
+            printer.set_setting("unknown_setting", 5)
+
+        assert "Unknown setting" in str(exc_info.value)
+        printer.disconnect()
+
+    def test_set_setting_invalid_value_raises(self):
+        """set_setting with invalid value should raise ValueError."""
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        with pytest.raises(ValueError) as exc_info:
+            printer.set_setting("auto_power_off", 7)  # Must be 3, 5, or 10
+
+        assert "must be 3, 5, or 10" in str(exc_info.value)
+        printer.disconnect()
+
+
+class TestCanonIvy2ErrorHandling:
+    """Tests for error handling paths."""
+
+    def setup_method(self):
+        """Set up command prefixes."""
+        self.session_prefix = bytearray(8)
+        struct.pack_into(">H", self.session_prefix, 0, START_CODE)
+        struct.pack_into(">hb", self.session_prefix, 2, -1, -1)
+        struct.pack_into(">H", self.session_prefix, 5, 0)
+
+        self.status_prefix = bytearray(8)
+        struct.pack_into(">H", self.status_prefix, 0, START_CODE)
+        struct.pack_into(">hb", self.status_prefix, 2, 1, 32)
+        struct.pack_into(">H", self.status_prefix, 5, 257)
+
+    def test_wrong_smart_sheet_error(self, tmp_path):
+        """Print should raise PrintError for wrong smart sheet."""
+        from zinkwell.exceptions import PrintError
+
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(self.status_prefix): build_status_response(wrong_sheet=True),
+        })
+
+        from PIL import Image
+        img_path = tmp_path / "test.jpg"
+        img = Image.new("RGB", (100, 100), "red")
+        img.save(img_path)
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        with pytest.raises(PrintError) as exc_info:
+            printer.print(str(img_path))
+
+        assert "Wrong smart sheet" in str(exc_info.value)
+        printer.disconnect()
+
+    def test_status_with_error_code(self):
+        """get_status should report error codes."""
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(self.status_prefix): build_status_response(error_code=42),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        status = printer.get_status()
+
+        assert status.error == "Error code: 42"
+        assert not status.is_ready
+        printer.disconnect()
+
+    def test_protocol_error_wrong_ack(self):
+        """Protocol error should be raised for unexpected ACK."""
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(self.status_prefix): build_response(ack=9999),  # Wrong ACK
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        with pytest.raises(ProtocolError) as exc_info:
+            printer.get_status()
+
+        assert "Unexpected ACK" in str(exc_info.value)
+        printer.disconnect()
+
+    def test_print_with_generic_error(self, tmp_path):
+        """Print should raise PrintError for generic status errors."""
+        from zinkwell.exceptions import PrintError
+
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(self.status_prefix): build_status_response(error_code=99),
+        })
+
+        from PIL import Image
+        img_path = tmp_path / "test.jpg"
+        img = Image.new("RGB", (100, 100), "red")
+        img.save(img_path)
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        with pytest.raises(PrintError):
+            printer.print(str(img_path))
+
+        printer.disconnect()
+
+    def test_info_includes_firmware_after_get_settings(self):
+        """Printer info should include firmware version after get_settings."""
+        settings_prefix = bytearray(8)
+        struct.pack_into(">H", settings_prefix, 0, START_CODE)
+        struct.pack_into(">hb", settings_prefix, 2, 1, 32)
+        struct.pack_into(">H", settings_prefix, 5, 259)
+
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+            bytes(settings_prefix): build_settings_response(firmware=(3, 2, 1)),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        # Before get_settings, firmware is None
+        assert printer.info.firmware_version is None
+
+        printer.get_settings()
+
+        # After get_settings, firmware is populated
+        assert printer.info.firmware_version == "3.2.1"
+        printer.disconnect()
+
+    def test_capabilities_property(self):
+        """Printer should expose capabilities."""
+        mock = MockTransport(responses={
+            bytes(self.session_prefix): build_session_response(),
+        })
+
+        printer = CanonIvy2Printer("AA:BB:CC:DD:EE:FF", transport=mock)
+        printer.connect()
+
+        caps = printer.capabilities
+
+        assert caps.can_get_status is True
+        assert caps.can_reboot is True
+        assert caps.min_battery_for_print == 30
+        printer.disconnect()
