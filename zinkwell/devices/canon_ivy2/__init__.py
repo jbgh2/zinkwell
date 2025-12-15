@@ -1,6 +1,10 @@
 """Canon Ivy 2 printer implementation."""
 
-# TODO: Phase 2 - migrate from existing code
-# from .printer import CanonIvy2Printer
+from .printer import CanonIvy2Printer
+from .image import prepare_image, get_preview_image
 
-# __all__ = ["CanonIvy2Printer"]
+__all__ = [
+    "CanonIvy2Printer",
+    "prepare_image",
+    "get_preview_image",
+]
