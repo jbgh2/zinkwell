@@ -2,7 +2,7 @@
 
 import queue
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from loguru import logger
 
@@ -76,18 +76,25 @@ class CanonIvy2Printer(Printer):
         self,
         address: str,
         port: int = 1,
-        transport: Optional[str] = None,
+        transport: Optional[Union[str, BluetoothTransport]] = None,
     ):
         """Initialize Canon Ivy 2 printer.
 
         Args:
             address: Bluetooth MAC address.
             port: RFCOMM channel (default 1).
-            transport: Transport type ("native", "pybluez") or None for auto.
+            transport: Transport type ("native", "pybluez"), transport instance,
+                or None for auto-detection.
         """
         self._address = address
         self._port = port
-        self._transport_type = transport
+        # Store transport instance or type string
+        if isinstance(transport, BluetoothTransport):
+            self._transport_instance = transport
+            self._transport_type = None
+        else:
+            self._transport_instance = None
+            self._transport_type = transport
         self._client: Optional[ThreadedClient] = None
         self._firmware_version: Optional[str] = None
 
@@ -116,7 +123,12 @@ class CanonIvy2Printer(Printer):
         if self.is_connected:
             return
 
-        transport = get_transport(self._transport_type)
+        # Use provided transport instance or create one
+        if self._transport_instance is not None:
+            transport = self._transport_instance
+        else:
+            transport = get_transport(self._transport_type)
+
         self._client = ThreadedClient(
             transport,
             receive_size=4096,

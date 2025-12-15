@@ -1,59 +1,82 @@
-# CLAUDE.md - Project Guide
+# CLAUDE.md - Zinkwell Project Guide
 
 ## Project Overview
 
-**Ivy2** is a Python API/SDK for controlling the Canon Ivy 2 mini photo printer via Bluetooth. It enables programmatic printing, printer status queries, and configuration management.
+**Zinkwell** is a Python SDK for controlling Zink-based mini photo printers via Bluetooth. Currently supports Canon Ivy 2, with architecture designed to support additional printers (Kodak Snap, etc.).
 
 ## Tech Stack
 
-- **Language:** Python 3
+- **Language:** Python 3.8+
 - **Dependencies:**
-  - `loguru` (0.6.0) - Structured logging
-  - `Pillow` (9.5.0) - Image processing
-  - `PyBluez` - Bluetooth communication (installed from git)
+  - `loguru` - Structured logging
+  - `Pillow` - Image processing
+  - Native Python `socket` with `AF_BLUETOOTH` (Windows/Linux)
 
 ## Project Structure
 
 ```
-├── ivy2.py           # Main printer API - Ivy2Printer class
-├── client.py         # Bluetooth communication thread handler
-├── task.py           # Protocol task implementations
-├── image.py          # Image processing and preparation
-├── utils.py          # Utility functions (bit parsing, message parsing)
-├── exceptions.py     # Custom exception definitions
-├── example.py        # Usage examples
-├── assets/
-│   └── test_image.jpg
-└── old/              # Deprecated code
+zinkwell/
+├── __init__.py                 # Package entry point, exports get_printer()
+├── factory.py                  # get_printer() factory function
+├── exceptions.py               # All exception types
+├── models/                     # Data models
+│   ├── __init__.py
+│   ├── status.py               # PrinterStatus, PrinterInfo
+│   └── capabilities.py         # PrinterCapabilities
+├── devices/                    # Printer implementations
+│   ├── __init__.py             # Device registry
+│   ├── base.py                 # Abstract Printer class
+│   └── canon_ivy2/             # Canon Ivy 2 implementation
+│       ├── __init__.py
+│       ├── printer.py          # CanonIvy2Printer
+│       ├── protocol.py         # Protocol tasks, message format
+│       └── image.py            # Image preparation
+├── bluetooth/                  # Transport layer
+│   ├── __init__.py             # get_transport() factory
+│   ├── base.py                 # Abstract BluetoothTransport
+│   └── native.py               # Python socket implementation
+└── utils/                      # Shared utilities
+    ├── __init__.py
+    └── threading.py            # ThreadedClient utility
+
+tests/
+├── conftest.py
+├── mocks.py                    # MockTransport for testing
+├── unit/                       # Fast isolated tests
+├── contract/                   # Interface compliance tests
+├── integration/                # Component interaction tests
+└── hardware/                   # Real device tests (skipped in CI)
 ```
 
 ## Architecture
 
-**Layered, protocol-driven design:**
+**Three-layer design:**
 
 ```
 User Code
     ↓
-Ivy2Printer API (ivy2.py)      → High-level methods: print(), get_status(), etc.
+get_printer("canon_ivy2", "AA:BB:CC:DD:EE:FF")
     ↓
-Task objects (task.py)          → Protocol message generation (34-byte packets)
+┌─────────────────────────────────────────────┐
+│  Layer 1: Printer Interface (devices/base)  │
+│  - Abstract Printer class                   │
+│  - PrinterStatus, PrinterInfo, Capabilities │
+└─────────────────────────────────────────────┘
     ↓
-ClientThread (client.py)        → Queue-based Bluetooth I/O thread
+┌─────────────────────────────────────────────┐
+│  Layer 2: Device Implementations            │
+│  - CanonIvy2Printer                         │
+│  - Protocol logic, image preparation        │
+└─────────────────────────────────────────────┘
     ↓
-Bluetooth RFCOMM                → Port 1 connection to printer
+┌─────────────────────────────────────────────┐
+│  Layer 3: Bluetooth Transport               │
+│  - NativeTransport (socket.AF_BLUETOOTH)    │
+│  - ThreadedClient utility                   │
+└─────────────────────────────────────────────┘
 ```
 
-### Key Components
-
-| Module | Purpose |
-|--------|---------|
-| `ivy2.py` | Public API - `Ivy2Printer` class with `connect()`, `print()`, `get_status()`, `get_setting()`, `set_setting()`, `reboot()` |
-| `client.py` | `ClientThread` - Threading-based Bluetooth socket manager with queue-based message passing |
-| `task.py` | Task classes for each command: `StartSessionTask`, `GetStatusTask`, `GetSettingTask`, `SetSettingTask`, `GetPrintReadyTask`, `RebootTask` |
-| `image.py` | `prepare_image()` - Converts images to printer format (1280x1920 → 640x1616, rotated 180°) |
-| `exceptions.py` | `LowBatteryError`, `CoverOpenError`, `NoPaperError`, `WrongSmartSheetError`, `ClientUnavailableError`, `ReceiveTimeoutError`, `AckError` |
-
-### Protocol Details
+### Protocol Details (Canon Ivy 2)
 
 - **Transport:** Bluetooth RFCOMM (port 1)
 - **Packet Size:** 34 bytes
@@ -63,64 +86,131 @@ Bluetooth RFCOMM                → Port 1 connection to printer
 
 ## Cheat Sheet
 
-### Setup Commands
+### Installation
 
 ```bash
-# Install system dependencies (Raspberry Pi)
-sudo apt install bluetooth bluez libbluetooth-dev
+# Install dependencies
+pip install -e .
 
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install PyBluez from source
-pip install git+https://github.com/pybluez/pybluez.git#egg=pybluez
+# Or manually
+pip install loguru pillow
 ```
 
-### Running the Example
+### Running Tests
 
 ```bash
-# Set your printer MAC address in example.py, then:
-python example.py
+# Run all tests (except hardware)
+pytest tests/ -v --ignore=tests/hardware
+
+# Run with coverage
+pytest tests/ --cov=zinkwell --ignore=tests/hardware
+
+# Run only unit tests
+pytest tests/unit/ -v
+
+# Run integration tests
+pytest tests/integration/ -v
 ```
 
-### Usage in Code
+### Usage
 
 ```python
-from ivy2 import Ivy2Printer
+from zinkwell import get_printer
 
-printer = Ivy2Printer("XX:XX:XX:XX:XX:XX")
+# Create printer
+printer = get_printer("canon_ivy2", "AA:BB:CC:DD:EE:FF")
+
+# Connect and use
 printer.connect()
-
-# Check status
 status = printer.get_status()
+print(f"Battery: {status.battery_level}%")
 
-# Print an image
-printer.print("path/to/image.jpg")
+if status.is_ready:
+    printer.print("photo.jpg")
 
 printer.disconnect()
+
+# Or use context manager
+with get_printer("canon_ivy2", "AA:BB:CC:DD:EE:FF") as printer:
+    printer.print("photo.jpg")
 ```
 
-### Image Preview (Development)
+### Listing Supported Printers
 
 ```python
-from example import preview_image
-preview_image("image.jpg")  # Generates preview_image.jpeg
+from zinkwell import list_supported_printers
+
+for name, info in list_supported_printers().items():
+    print(f"{name}: {info.name}")
 ```
 
-### Bluetooth Pairing (Raspberry Pi)
+## Platform-Specific Setup
+
+### Windows
+
+Python's native `socket.AF_BLUETOOTH` works out of the box. No additional setup required.
 
 ```bash
-bluetoothctl
-# > scan on
-# > pair XX:XX:XX:XX:XX:XX
-# > trust XX:XX:XX:XX:XX:XX
-# > exit
+# Verify Bluetooth support
+python -c "import socket; s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM); print('OK')"
 ```
+
+### Linux/Raspberry Pi
+
+```bash
+# Install system dependencies
+sudo apt install bluetooth bluez libbluetooth-dev python3-dev
+
+# Ensure Bluetooth service is running
+sudo systemctl enable bluetooth
+sudo systemctl start bluetooth
+
+# Pair printer
+bluetoothctl
+> scan on
+> pair XX:XX:XX:XX:XX:XX
+> trust XX:XX:XX:XX:XX:XX
+> exit
+```
+
+### macOS
+
+Not currently supported (requires PyObjC + IOBluetooth bridge).
+
+## Testing on Different Platforms
+
+### Phase 3: Cross-Platform Testing Checklist
+
+To verify the native transport works on Linux/Pi:
+
+1. **Basic connectivity test:**
+   ```bash
+   pytest tests/unit/bluetooth/test_native.py -v
+   ```
+
+2. **Full test suite:**
+   ```bash
+   pytest tests/ -v --ignore=tests/hardware
+   ```
+
+3. **Hardware test (requires paired printer):**
+   ```bash
+   # Set PRINTER_ADDRESS environment variable
+   export PRINTER_ADDRESS="AA:BB:CC:DD:EE:FF"
+   pytest tests/hardware/ -v
+   ```
+
+### Known Platform Differences
+
+| Feature | Windows | Linux/Pi | macOS |
+|---------|---------|----------|-------|
+| Native socket BT | ✅ | ✅ | ❌ |
+| PyBluez fallback | N/A | ✅ | ❌ |
+| BLE support | ❌ | Future | ❌ |
 
 ## Development Notes
 
-- No test suite or build scripts - pure Python library
-- Image processing uses PIL/Pillow with LANCZOS resampling
-- Logging via `loguru` at DEBUG/ERROR levels
-- Threading model: single background thread for all Bluetooth I/O
-- 30-second auto-disconnect on inactivity
+- **Testing:** 51 tests (unit + contract + integration)
+- **Threading:** Device-level with shared ThreadedClient utility
+- **Logging:** `loguru` at DEBUG/ERROR levels
+- **Auto-disconnect:** 30 seconds of inactivity
