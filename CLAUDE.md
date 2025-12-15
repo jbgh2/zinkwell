@@ -217,8 +217,8 @@ To verify the native transport works on Linux/Pi:
 
 ## Development Notes
 
-- **Testing:** 51 tests (unit + contract + integration)
-- **Coverage:** ~76% (run `pytest --cov=zinkwell` to check)
+- **Testing:** 114 tests (unit + contract + integration)
+- **Coverage:** 91% (run `pytest --cov=zinkwell` to check)
 - **Threading:** Device-level with shared ThreadedClient utility
 - **Logging:** `loguru` at DEBUG/ERROR levels
 - **Auto-disconnect:** 30 seconds of inactivity
