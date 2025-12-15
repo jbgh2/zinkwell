@@ -102,8 +102,15 @@ pip install loguru pillow
 # Run all tests (except hardware)
 pytest tests/ -v --ignore=tests/hardware
 
-# Run with coverage
-pytest tests/ --cov=zinkwell --ignore=tests/hardware
+# Run with coverage (terminal report)
+pytest tests/ --cov=zinkwell --cov-report=term-missing --ignore=tests/hardware
+
+# Run with coverage (HTML report)
+pytest tests/ --cov=zinkwell --cov-report=html --ignore=tests/hardware
+# Open htmlcov/index.html in browser
+
+# Run with coverage (all reports: terminal, HTML, XML)
+pytest tests/ --cov=zinkwell --cov-report=term-missing --cov-report=html --cov-report=xml --ignore=tests/hardware
 
 # Run only unit tests
 pytest tests/unit/ -v
@@ -211,6 +218,14 @@ To verify the native transport works on Linux/Pi:
 ## Development Notes
 
 - **Testing:** 51 tests (unit + contract + integration)
+- **Coverage:** ~76% (run `pytest --cov=zinkwell` to check)
 - **Threading:** Device-level with shared ThreadedClient utility
 - **Logging:** `loguru` at DEBUG/ERROR levels
 - **Auto-disconnect:** 30 seconds of inactivity
+
+### Coverage Reports
+
+Coverage tracking is configured in `pyproject.toml`. Reports available:
+- **Terminal:** `--cov-report=term-missing` (shows missing lines)
+- **HTML:** `--cov-report=html` (generates `htmlcov/index.html`)
+- **XML:** `--cov-report=xml` (generates `coverage.xml` for CI integration)

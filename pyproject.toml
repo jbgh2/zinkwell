@@ -56,9 +56,9 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["zinkwell"]
+branch = true
 omit = [
     "tests/*",
-    "zinkwell/devices/canon_ivy2/*",  # TODO: enable after migration
 ]
 
 [tool.coverage.report]
@@ -67,4 +67,14 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "@abstractmethod",
+    "if __name__ == .__main__.:",
 ]
+show_missing = true
+skip_covered = false
+fail_under = 0
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"

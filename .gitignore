@@ -3,3 +3,18 @@ __pycache__/
 venv/
 .venv/
 preview_image.jpeg
+
+# Coverage reports
+htmlcov/
+coverage.xml
+.coverage
+.coverage.*
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
