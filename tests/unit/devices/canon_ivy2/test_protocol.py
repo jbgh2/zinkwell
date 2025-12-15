@@ -24,22 +24,17 @@ from zinkwell.devices.canon_ivy2.protocol import (
 class TestParseBitRange:
     """Tests for parse_bit_range function."""
 
-    def test_parse_zero(self):
-        assert parse_bit_range(0, 6) == 0
-
-    def test_parse_max_6_bits(self):
-        # 6 bits = max 63
-        assert parse_bit_range(0b111111, 6) == 63
-
-    def test_parse_partial(self):
-        # Binary 101010 = 42
-        assert parse_bit_range(0b101010, 6) == 42
-
-    def test_parse_battery_level(self):
-        # Typical battery value from printer
-        # If raw value encodes 85%, this should extract it
-        raw = 85
-        assert parse_bit_range(raw, 6) == 21  # 6 LSBs of 85
+    @pytest.mark.parametrize("value,size,expected", [
+        (0, 6, 0),              # Zero
+        (0b111111, 6, 63),      # Max 6 bits
+        (0b101010, 6, 42),      # Partial pattern
+        (85, 6, 21),            # Battery level (6 LSBs of 85)
+        (255, 0, 0),            # Size 0 returns 0
+        (0b11111111, 8, 255),   # 8 bits
+    ])
+    def test_extracts_correct_bits(self, value, size, expected):
+        """parse_bit_range should extract the correct LSBs."""
+        assert parse_bit_range(value, size) == expected
 
 
 class TestParseMessage:
@@ -255,6 +250,31 @@ class TestGetPrintReadyTask:
         assert msg[9] == 0x00
         assert msg[10] == 0x30
         assert msg[11] == 0x39
+
+    def test_flag_affects_message(self):
+        """Flag parameter should change byte 13."""
+        task_false = GetPrintReadyTask(length=100, flag=False)
+        task_true = GetPrintReadyTask(length=100, flag=True)
+
+        assert task_false.get_message()[13] == 1
+        assert task_true.get_message()[13] == 2
+
+    def test_process_response(self):
+        """process_response should extract error code."""
+        task = GetPrintReadyTask(length=1000)
+
+        payload = bytearray(10)
+        payload[3] = 5  # Error code
+
+        response = ParsedMessage(
+            raw_data=b"x" * 34,
+            payload=bytes(payload),
+            ack=769,
+            error=0,
+        )
+
+        _, error_code = task.process_response(response)
+        assert error_code == 5
 
 
 class TestRebootTask:
