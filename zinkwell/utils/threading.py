@@ -10,6 +10,7 @@ import time
 from typing import Optional
 
 from ..bluetooth.base import BluetoothTransport
+from ..exceptions import TransportError, ConnectionError as ZinkwellConnectionError
 
 
 class ThreadedClient(threading.Thread):
@@ -98,30 +99,36 @@ class ThreadedClient(threading.Thread):
 
     def run(self) -> None:
         """Background I/O loop."""
-        while self.alive.is_set():
-            # Check connection health
-            if not self.transport.is_connected():
-                self.disconnect()
-                break
+        try:
+            while self.alive.is_set():
+                # Check connection health
+                if not self.transport.is_connected():
+                    break
 
-            # Send outbound messages (blocking with short timeout)
-            self.transport.set_blocking(True)
-            try:
-                message = self.outbound_q.get(timeout=0.1)
-                self.transport.send(message)
-                self._reset_disconnect_timer()
-                time.sleep(0.02)  # Small delay between sends
-            except queue.Empty:
-                pass
+                # Send outbound messages (blocking with short timeout)
+                self.transport.set_blocking(True)
+                try:
+                    message = self.outbound_q.get(timeout=0.1)
+                    self.transport.send(message)
+                    self._reset_disconnect_timer()
+                    time.sleep(0.02)  # Small delay between sends
+                except queue.Empty:
+                    pass
 
-            # Receive inbound messages (non-blocking)
-            self.transport.set_blocking(False)
-            try:
-                data = self.transport.recv(self.receive_size)
-                if data:
-                    self.inbound_q.put(data)
-            except (OSError, BlockingIOError):
-                pass  # No data available
+                # Receive inbound messages (non-blocking)
+                self.transport.set_blocking(False)
+                try:
+                    data = self.transport.recv(self.receive_size)
+                    if data:
+                        self.inbound_q.put(data)
+                except (OSError, BlockingIOError):
+                    pass  # No data available
+        except (TransportError, ZinkwellConnectionError, OSError):
+            # Transport error (e.g., Bluetooth drop) - trigger clean shutdown
+            pass
+        finally:
+            # Always clear alive flag so callers see the failure
+            self.alive.clear()
 
     def _reset_disconnect_timer(self) -> None:
         """Reset the auto-disconnect timer."""
