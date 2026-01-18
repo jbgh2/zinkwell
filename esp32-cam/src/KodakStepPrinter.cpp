@@ -26,7 +26,8 @@ bool KodakStepPrinter::begin(const char* deviceName) {
         return false;
     }
 
-    Serial.println("Bluetooth initialized as: " + String(deviceName));
+    Serial.print("Bluetooth initialized as: ");
+    Serial.println(deviceName);
     return true;
 }
 
@@ -36,7 +37,8 @@ bool KodakStepPrinter::connect(const char* printerAddress) {
         return false;
     }
 
-    Serial.println("Connecting to printer at address: " + String(printerAddress));
+    Serial.print("Connecting to printer at address: ");
+    Serial.println(printerAddress);
 
     if (!btSerial->connect(printerAddress)) {
         setError("Failed to connect to printer");
@@ -55,7 +57,8 @@ bool KodakStepPrinter::connectByName(const char* printerName) {
         return false;
     }
 
-    Serial.println("Connecting to printer by name: " + String(printerName));
+    Serial.print("Connecting to printer by name: ");
+    Serial.println(printerName);
 
     if (!btSerial->connect(printerName)) {
         setError("Failed to connect to printer");
@@ -287,7 +290,8 @@ bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size) {
     size_t totalChunks = (size + KODAK_CHUNK_SIZE - 1) / KODAK_CHUNK_SIZE;
 
     while (offset < size) {
-        size_t chunkSize = min((size_t)KODAK_CHUNK_SIZE, size - offset);
+        size_t remaining = size - offset;
+        size_t chunkSize = (remaining < KODAK_CHUNK_SIZE) ? remaining : KODAK_CHUNK_SIZE;
 
         chunkNum++;
         Serial.print("Sending chunk ");
