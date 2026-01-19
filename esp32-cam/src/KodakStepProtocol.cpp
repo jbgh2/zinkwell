@@ -96,6 +96,7 @@ bool KodakStepProtocol::parseResponse(const uint8_t* response, uint8_t* errorCod
         response[2] != KODAK_IDENT_1 ||
         response[3] != KODAK_IDENT_2) {
         Serial.println("Invalid response header");
+        *errorCode = ERR_NOT_CONNECTED;
         return false;
     }
 
@@ -112,6 +113,16 @@ bool KodakStepProtocol::parseResponse(const uint8_t* response, uint8_t* errorCod
 
 uint8_t KodakStepProtocol::parseBatteryLevel(const uint8_t* response) {
     // Battery level is in byte 8 for GET_BATTERY_LEVEL response
+    return response[8];
+}
+
+uint16_t KodakStepProtocol::parsePrintCount(const uint8_t* response) {
+    // Print count is a 16-bit value in bytes 8-9 (big-endian)
+    return (response[8] << 8) | response[9];
+}
+
+uint8_t KodakStepProtocol::parseAutoPowerOff(const uint8_t* response) {
+    // Auto power off timeout in minutes is in byte 8
     return response[8];
 }
 

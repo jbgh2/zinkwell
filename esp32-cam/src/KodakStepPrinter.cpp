@@ -193,8 +193,7 @@ bool KodakStepPrinter::getPrintCount(uint16_t* count) {
         return false;
     }
 
-    // Parse print count from response (implementation depends on actual response format)
-    *count = 0;  // Placeholder
+    *count = protocol.parsePrintCount(response);
 
     delay_ms(100);
     return true;
@@ -216,8 +215,7 @@ bool KodakStepPrinter::getAutoPowerOff(uint8_t* minutes) {
         return false;
     }
 
-    // Parse auto power off value from response
-    *minutes = 0;  // Placeholder
+    *minutes = protocol.parseAutoPowerOff(response);
 
     delay_ms(100);
     return true;
