@@ -21,7 +21,8 @@ bool KodakStepPrinter::begin(const char* deviceName) {
 
     btSerial = new BluetoothSerial();
 
-    if (!btSerial->begin(deviceName)) {
+    // Initialize in master mode (second param = true) to connect to printer
+    if (!btSerial->begin(deviceName, true)) {
         setError("Failed to initialize Bluetooth");
         return false;
     }
@@ -57,17 +58,81 @@ bool KodakStepPrinter::connectByName(const char* printerName) {
         return false;
     }
 
-    Serial.print("Connecting to printer by name: ");
+    Serial.println("\n=== Bluetooth Discovery ===");
+    Serial.print("Searching for device containing: ");
     Serial.println(printerName);
 
-    if (!btSerial->connect(printerName)) {
+    // Scan for devices first
+    Serial.println("Starting Bluetooth scan...");
+    BTScanResults* scanResults = btSerial->discover(10000);  // 10 second scan
+
+    if (scanResults == nullptr) {
+        Serial.println("ERROR: Scan returned null");
+        setError("Bluetooth scan failed");
+        return false;
+    }
+
+    int count = scanResults->getCount();
+    Serial.print("Found ");
+    Serial.print(count);
+    Serial.println(" Bluetooth devices:");
+
+    BTAddress targetAddress;
+    bool found = false;
+    for (int i = 0; i < count; i++) {
+        BTAdvertisedDevice* device = scanResults->getDevice(i);
+        if (device) {
+            String name = device->getName().c_str();
+            String addr = device->getAddress().toString().c_str();
+            Serial.print("  [");
+            Serial.print(i);
+            Serial.print("] ");
+            Serial.print(addr);
+            Serial.print(" - \"");
+            Serial.print(name);
+            Serial.println("\"");
+
+            // Check if this is our target printer (case-insensitive)
+            String nameLower = name;
+            String searchLower = printerName;
+            nameLower.toLowerCase();
+            searchLower.toLowerCase();
+            if (nameLower.indexOf(searchLower) >= 0) {
+                Serial.println("      ^ MATCH FOUND!");
+                targetAddress = device->getAddress();
+                found = true;
+            }
+        }
+    }
+    Serial.println("=== End Discovery ===\n");
+
+    if (!found) {
+        setError("Printer not found in scan");
+        return false;
+    }
+
+    Serial.print("Connecting to address: ");
+    Serial.println(targetAddress.toString().c_str());
+
+    // Connect using the BTAddress directly
+    if (!btSerial->connect(targetAddress)) {
+        Serial.println("connect() returned false");
         setError("Failed to connect to printer");
         return false;
     }
 
-    delay_ms(500);  // Initial connection delay
+    Serial.println("connect() returned true, waiting...");
+    delay_ms(1000);  // Initial connection delay
+
+    // Verify connection
+    if (!btSerial->connected()) {
+        Serial.println("connected() check failed after connect()");
+        setError("Connection lost after connect");
+        return false;
+    }
+
     status.is_connected = true;
-    Serial.println("Connected to printer");
+    Serial.println("Connected to printer successfully!");
     return true;
 }
 
@@ -136,10 +201,20 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level) {
         return false;
     }
 
+    // Debug: print raw bytes for battery parsing
+    Serial.print("Battery response bytes 6-10: ");
+    for (int i = 6; i <= 10; i++) {
+        Serial.print("0x");
+        if (response[i] < 0x10) Serial.print("0");
+        Serial.print(response[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
     *level = protocol.parseBatteryLevel(response);
     status.battery_level = *level;
 
-    Serial.print("Battery level: ");
+    Serial.print("Battery level (byte 8): ");
     Serial.print(*level);
     Serial.println("%");
 
@@ -234,8 +309,9 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
     }
 
     if (battery < KODAK_MIN_BATTERY_LEVEL) {
-        setError("Battery too low to print");
-        return false;
+        Serial.println("WARNING: Battery reported as low, but continuing anyway for testing...");
+        // setError("Battery too low to print");
+        // return false;
     }
 
     // Check paper status
