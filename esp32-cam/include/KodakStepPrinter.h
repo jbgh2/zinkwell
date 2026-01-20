@@ -25,8 +25,8 @@ public:
     bool isConnected();
 
     // Printer operations
-    bool initialize(bool isSlimDevice = false);
-    bool getBatteryLevel(uint8_t* level);
+    bool initialize(bool isSlimDevice = false, uint8_t* rawResponse = nullptr);
+    bool getBatteryLevel(uint8_t* level, uint8_t* rawResponse = nullptr);
     bool checkPaperStatus();
     bool getPrintCount(uint16_t* count);
     bool getAutoPowerOff(uint8_t* minutes);

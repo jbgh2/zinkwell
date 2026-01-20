@@ -148,7 +148,7 @@ bool KodakStepPrinter::isConnected() {
     return status.is_connected && (btSerial != nullptr) && btSerial->connected();
 }
 
-bool KodakStepPrinter::initialize(bool isSlimDevice) {
+bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -168,6 +168,11 @@ bool KodakStepPrinter::initialize(bool isSlimDevice) {
         return false;
     }
 
+    // Copy raw response if requested
+    if (rawResponse != nullptr) {
+        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
+    }
+
     uint8_t errorCode;
     if (!protocol.parseResponse(response, &errorCode)) {
         setError(protocol.getErrorString(errorCode));
@@ -183,7 +188,7 @@ bool KodakStepPrinter::initialize(bool isSlimDevice) {
     return true;
 }
 
-bool KodakStepPrinter::getBatteryLevel(uint8_t* level) {
+bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -192,29 +197,31 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level) {
     uint8_t command[KODAK_PACKET_SIZE];
     uint8_t response[KODAK_PACKET_SIZE];
 
-    protocol.buildGetBatteryLevelPacket(command);
+    // Use GET_ACCESSORY_INFO to get battery level - it's in byte 12 of that response
+    // The GET_BATTERY_LEVEL command (0x0E) returns charging status, not battery percentage
+    protocol.buildGetAccessoryInfoPacket(command, status.is_slim_device);
 
-    Serial.println("Requesting battery level...");
+    Serial.println("Requesting battery level (via GET_ACCESSORY_INFO)...");
 
     if (!sendAndReceive(command, response)) {
         setError("Failed to get battery level");
         return false;
     }
 
-    // Debug: print raw bytes for battery parsing
-    Serial.print("Battery response bytes 6-10: ");
-    for (int i = 6; i <= 10; i++) {
-        Serial.print("0x");
-        if (response[i] < 0x10) Serial.print("0");
-        Serial.print(response[i], HEX);
-        Serial.print(" ");
+    // Copy raw response if requested
+    if (rawResponse != nullptr) {
+        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
     }
-    Serial.println();
 
-    *level = protocol.parseBatteryLevel(response);
+    // Debug output
+    Serial.println("Accessory info response:");
+    protocol.printPacketHex(response, KODAK_PACKET_SIZE);
+
+    // Battery level is in byte 12 of GET_ACCESSORY_INFO response
+    *level = response[12];
     status.battery_level = *level;
 
-    Serial.print("Battery level (byte 8): ");
+    Serial.print("Parsed battery level: ");
     Serial.print(*level);
     Serial.println("%");
 
