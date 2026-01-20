@@ -1,0 +1,10 @@
+# Development dependencies
+# Install with: pip install -r requirements-dev.txt
+-e .[dev]
+
+# Linting and formatting
+ruff
+black
+
+# Type checking
+mypy
