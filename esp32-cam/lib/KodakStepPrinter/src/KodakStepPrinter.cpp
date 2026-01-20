@@ -223,15 +223,15 @@ bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     // Send GET_ACCESSORY_INFO
     protocol.buildGetAccessoryInfoPacket(command, isSlimDevice);
 
     debugPrintln("Sending GET_ACCESSORY_INFO...");
     if (debugEnabled) {
-        protocol.printPacketHex(command, KODAK_PACKET_SIZE);
+        protocol.printPacketHex(command, BTP_PACKET_SIZE, debugEnabled);
     }
 
     if (!sendAndReceive(command, response)) {
@@ -241,7 +241,7 @@ bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
 
     // Copy raw response if requested
     if (rawResponse != nullptr) {
-        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
+        memcpy(rawResponse, response, BTP_PACKET_SIZE);
     }
 
     uint8_t errorCode;
@@ -252,7 +252,7 @@ bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
     }
 
     status.is_slim_device = isSlimDevice;
-    status.error_code = ERR_SUCCESS;
+    status.error_code = BTP_ERR_SUCCESS;
 
     debugPrintln("Printer initialized successfully");
     delay(500);  // Wait after initialization
@@ -271,8 +271,8 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     // Battery level is in byte 12 of GET_ACCESSORY_INFO response
     // Note: GET_BATTERY_LEVEL (0x0E) returns charging status, not battery percentage
@@ -284,7 +284,7 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
     }
 
     if (rawResponse != nullptr) {
-        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
+        memcpy(rawResponse, response, BTP_PACKET_SIZE);
     }
 
     *level = response[12];
@@ -306,8 +306,8 @@ bool KodakStepPrinter::getChargingStatus(bool* isCharging, uint8_t* rawResponse)
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     // GET_BATTERY_LEVEL (0x0E) returns charging status in byte 8 (1 = charging)
     protocol.buildGetBatteryLevelPacket(command);
@@ -318,7 +318,7 @@ bool KodakStepPrinter::getChargingStatus(bool* isCharging, uint8_t* rawResponse)
     }
 
     if (rawResponse != nullptr) {
-        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
+        memcpy(rawResponse, response, BTP_PACKET_SIZE);
     }
 
     // Byte 8 contains charging status: 1 = charging, 0 = not charging
@@ -335,8 +335,8 @@ bool KodakStepPrinter::checkPaperStatus() {
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     protocol.buildGetPageTypePacket(command);
 
@@ -371,8 +371,8 @@ bool KodakStepPrinter::getPrintCount(uint16_t* count) {
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     protocol.buildGetPrintCountPacket(command);
 
@@ -399,8 +399,8 @@ bool KodakStepPrinter::getAutoPowerOff(uint8_t* minutes) {
         return false;
     }
 
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     protocol.buildGetAutoPowerOffPacket(command);
 
@@ -428,6 +428,11 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
         return false;
     }
 
+    if (dataSize > BTP_MAX_IMAGE_SIZE) {
+        setError("Image data exceeds maximum size (2MB)");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -439,7 +444,7 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
         return false;
     }
 
-    if (battery < KODAK_MIN_BATTERY_LEVEL) {
+    if (battery < BTP_MIN_BATTERY_LEVEL) {
         setError("Battery too low to print");
         return false;
     }
@@ -450,8 +455,8 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
     }
 
     // Send PRINT_READY command
-    uint8_t command[KODAK_PACKET_SIZE];
-    uint8_t response[KODAK_PACKET_SIZE];
+    uint8_t command[BTP_PACKET_SIZE];
+    uint8_t response[BTP_PACKET_SIZE];
 
     protocol.buildPrintReadyPacket(command, dataSize, numCopies);
 
@@ -495,7 +500,7 @@ bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size,
                                           KodakProgressCallback progressCallback) {
     size_t offset = 0;
     size_t chunkNum = 0;
-    size_t totalChunks = (size + KODAK_CHUNK_SIZE - 1) / KODAK_CHUNK_SIZE;
+    size_t totalChunks = (size + BTP_CHUNK_SIZE - 1) / BTP_CHUNK_SIZE;
 
     // Check connection once at start, then use skipConnectionCheck for performance
     if (!isConnected()) {
@@ -504,7 +509,7 @@ bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size,
 
     while (offset < size) {
         size_t remaining = size - offset;
-        size_t chunkSize = (remaining < KODAK_CHUNK_SIZE) ? remaining : KODAK_CHUNK_SIZE;
+        size_t chunkSize = (remaining < BTP_CHUNK_SIZE) ? remaining : BTP_CHUNK_SIZE;
 
         chunkNum++;
         if (debugEnabled) {
@@ -530,7 +535,7 @@ bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size,
             progressCallback(offset, size);
         }
 
-        delay(KODAK_INTER_CHUNK_DELAY_MS);
+        delay(BTP_INTER_CHUNK_DELAY_MS);
         yield();  // Allow other tasks between chunks
     }
 
@@ -572,7 +577,7 @@ bool KodakStepPrinter::receiveResponse(uint8_t* response, uint32_t timeoutMs) {
     uint32_t startTime = millis();
     size_t bytesRead = 0;
 
-    while (bytesRead < KODAK_PACKET_SIZE) {
+    while (bytesRead < BTP_PACKET_SIZE) {
         // Unsigned subtraction handles millis() overflow correctly
         if (millis() - startTime > timeoutMs) {
             debugPrintln("Response timeout");
@@ -589,14 +594,14 @@ bool KodakStepPrinter::receiveResponse(uint8_t* response, uint32_t timeoutMs) {
 
     if (debugEnabled) {
         Serial.println("Received response:");
-        protocol.printPacketHex(response, KODAK_PACKET_SIZE);
+        protocol.printPacketHex(response, BTP_PACKET_SIZE, debugEnabled);
     }
 
     return true;
 }
 
 bool KodakStepPrinter::sendAndReceive(const uint8_t* command, uint8_t* response) {
-    if (!sendCommand(command, KODAK_PACKET_SIZE)) {
+    if (!sendCommand(command, BTP_PACKET_SIZE)) {
         return false;
     }
 

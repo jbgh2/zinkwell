@@ -25,7 +25,7 @@ void tearDown(void) {
 // =============================================================================
 
 void test_buildGetAccessoryInfoPacket_standard(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetAccessoryInfoPacket(buffer, false);
 
@@ -44,13 +44,13 @@ void test_buildGetAccessoryInfoPacket_standard(void) {
     TEST_ASSERT_EQUAL_HEX8(0x00, buffer[7]);
 
     // Rest should be zeros
-    for (int i = 8; i < KODAK_PACKET_SIZE; i++) {
+    for (int i = 8; i < BTP_PACKET_SIZE; i++) {
         TEST_ASSERT_EQUAL_HEX8(0x00, buffer[i]);
     }
 }
 
 void test_buildGetAccessoryInfoPacket_slim(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetAccessoryInfoPacket(buffer, true);
 
@@ -59,7 +59,7 @@ void test_buildGetAccessoryInfoPacket_slim(void) {
 }
 
 void test_buildGetBatteryLevelPacket(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetBatteryLevelPacket(buffer);
 
@@ -71,7 +71,7 @@ void test_buildGetBatteryLevelPacket(void) {
 }
 
 void test_buildGetPageTypePacket(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetPageTypePacket(buffer);
 
@@ -79,7 +79,7 @@ void test_buildGetPageTypePacket(void) {
 }
 
 void test_buildGetPrintCountPacket(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetPrintCountPacket(buffer);
 
@@ -88,7 +88,7 @@ void test_buildGetPrintCountPacket(void) {
 }
 
 void test_buildGetAutoPowerOffPacket(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildGetAutoPowerOffPacket(buffer);
 
@@ -96,7 +96,7 @@ void test_buildGetAutoPowerOffPacket(void) {
 }
 
 void test_buildPrintReadyPacket_small_image(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildPrintReadyPacket(buffer, 1000, 1);
 
@@ -114,7 +114,7 @@ void test_buildPrintReadyPacket_small_image(void) {
 }
 
 void test_buildPrintReadyPacket_large_image(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     // Test with 100,000 bytes (0x0186A0)
     protocol.buildPrintReadyPacket(buffer, 100000, 3);
@@ -126,7 +126,7 @@ void test_buildPrintReadyPacket_large_image(void) {
 }
 
 void test_buildStartOfSendAck(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildStartOfSendAck(buffer);
 
@@ -136,7 +136,7 @@ void test_buildStartOfSendAck(void) {
 }
 
 void test_buildEndOfReceivedAck(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
     protocol.buildEndOfReceivedAck(buffer);
 
@@ -146,13 +146,13 @@ void test_buildEndOfReceivedAck(void) {
 }
 
 void test_buildErrorMessageAck(void) {
-    uint8_t buffer[KODAK_PACKET_SIZE];
+    uint8_t buffer[BTP_PACKET_SIZE];
 
-    protocol.buildErrorMessageAck(buffer, ERR_NO_PAPER);
+    protocol.buildErrorMessageAck(buffer, BTP_ERR_NO_PAPER);
 
     TEST_ASSERT_EQUAL_HEX8(0x01, buffer[6]);
     TEST_ASSERT_EQUAL_HEX8(0x00, buffer[7]);
-    TEST_ASSERT_EQUAL_HEX8(ERR_NO_PAPER, buffer[8]);
+    TEST_ASSERT_EQUAL_HEX8(BTP_ERR_NO_PAPER, buffer[8]);
 }
 
 // =============================================================================
@@ -160,7 +160,7 @@ void test_buildErrorMessageAck(void) {
 // =============================================================================
 
 void test_parseResponse_success(void) {
-    uint8_t response[KODAK_PACKET_SIZE] = {0};
+    uint8_t response[BTP_PACKET_SIZE] = {0};
     response[0] = 0x1B;
     response[1] = 0x2A;
     response[2] = 0x43;
@@ -171,36 +171,36 @@ void test_parseResponse_success(void) {
     bool result = protocol.parseResponse(response, &errorCode);
 
     TEST_ASSERT_TRUE(result);
-    TEST_ASSERT_EQUAL_HEX8(ERR_SUCCESS, errorCode);
+    TEST_ASSERT_EQUAL_HEX8(BTP_ERR_SUCCESS, errorCode);
 }
 
 void test_parseResponse_error(void) {
-    uint8_t response[KODAK_PACKET_SIZE] = {0};
+    uint8_t response[BTP_PACKET_SIZE] = {0};
     response[0] = 0x1B;
     response[1] = 0x2A;
     response[2] = 0x43;
     response[3] = 0x41;
-    response[8] = ERR_NO_PAPER;
+    response[8] = BTP_ERR_NO_PAPER;
 
     uint8_t errorCode = 0xFF;
     bool result = protocol.parseResponse(response, &errorCode);
 
     TEST_ASSERT_FALSE(result);
-    TEST_ASSERT_EQUAL_HEX8(ERR_NO_PAPER, errorCode);
+    TEST_ASSERT_EQUAL_HEX8(BTP_ERR_NO_PAPER, errorCode);
 }
 
 void test_parseResponse_invalid_header(void) {
-    uint8_t response[KODAK_PACKET_SIZE] = {0};  // All zeros = invalid
+    uint8_t response[BTP_PACKET_SIZE] = {0};  // All zeros = invalid
 
     uint8_t errorCode = 0xFF;
     bool result = protocol.parseResponse(response, &errorCode);
 
     TEST_ASSERT_FALSE(result);
-    TEST_ASSERT_EQUAL_HEX8(ERR_NOT_CONNECTED, errorCode);
+    TEST_ASSERT_EQUAL_HEX8(BTP_ERR_NOT_CONNECTED, errorCode);
 }
 
 void test_parsePrintCount(void) {
-    uint8_t response[KODAK_PACKET_SIZE] = {0};
+    uint8_t response[BTP_PACKET_SIZE] = {0};
     response[0] = 0x1B;
     response[1] = 0x2A;
     response[2] = 0x43;
@@ -214,7 +214,7 @@ void test_parsePrintCount(void) {
 }
 
 void test_parseAutoPowerOff(void) {
-    uint8_t response[KODAK_PACKET_SIZE] = {0};
+    uint8_t response[BTP_PACKET_SIZE] = {0};
     response[8] = 15;  // 15 minutes
 
     uint8_t minutes = protocol.parseAutoPowerOff(response);
@@ -227,12 +227,12 @@ void test_parseAutoPowerOff(void) {
 // =============================================================================
 
 void test_getErrorString_success(void) {
-    const char* str = KodakStepProtocol::getErrorString(ERR_SUCCESS);
+    const char* str = KodakStepProtocol::getErrorString(BTP_ERR_SUCCESS);
     TEST_ASSERT_EQUAL_STRING("Success", str);
 }
 
 void test_getErrorString_no_paper(void) {
-    const char* str = KodakStepProtocol::getErrorString(ERR_NO_PAPER);
+    const char* str = KodakStepProtocol::getErrorString(BTP_ERR_NO_PAPER);
     TEST_ASSERT_EQUAL_STRING("Out of paper", str);
 }
 
@@ -246,15 +246,15 @@ void test_getErrorString_unknown(void) {
 // =============================================================================
 
 void test_packet_size_constant(void) {
-    TEST_ASSERT_EQUAL(34, KODAK_PACKET_SIZE);
+    TEST_ASSERT_EQUAL(34, BTP_PACKET_SIZE);
 }
 
 void test_chunk_size_constant(void) {
-    TEST_ASSERT_EQUAL(4096, KODAK_CHUNK_SIZE);
+    TEST_ASSERT_EQUAL(4096, BTP_CHUNK_SIZE);
 }
 
 void test_min_battery_constant(void) {
-    TEST_ASSERT_EQUAL(30, KODAK_MIN_BATTERY_LEVEL);
+    TEST_ASSERT_EQUAL(30, BTP_MIN_BATTERY_LEVEL);
 }
 
 // =============================================================================

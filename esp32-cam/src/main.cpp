@@ -26,7 +26,7 @@ void printStatus() {
     Serial.println(status.is_slim_device ? "YES" : "NO");
     Serial.print("Error Code:  ");
     Serial.println(status.error_code);
-    if (status.error_code != ERR_SUCCESS) {
+    if (status.error_code != BTP_ERR_SUCCESS) {
         Serial.print("Error:       ");
         Serial.println(KodakStepProtocol::getErrorString(status.error_code));
     }

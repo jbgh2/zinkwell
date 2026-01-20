@@ -70,7 +70,7 @@ private:
 
     // Communication helpers (skipConnectionCheck for internal use after already checking)
     bool sendCommand(const uint8_t* command, size_t length, bool skipConnectionCheck = false);
-    bool receiveResponse(uint8_t* response, uint32_t timeoutMs = KODAK_COMMAND_TIMEOUT_MS);
+    bool receiveResponse(uint8_t* response, uint32_t timeoutMs = BTP_COMMAND_TIMEOUT_MS);
     bool sendAndReceive(const uint8_t* command, uint8_t* response);
 
     // Image transfer
