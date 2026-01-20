@@ -74,7 +74,8 @@ class NativeTransport(BluetoothTransport):
             raise ConnectionError("Not connected")
 
         try:
-            return self._socket.send(data)
+            self._socket.sendall(data)
+            return len(data)
         except OSError as e:
             raise TransportError(f"Send failed: {e}") from e
 
