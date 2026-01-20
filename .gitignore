@@ -3,3 +3,12 @@ __pycache__/
 venv/
 .venv/
 preview_image.jpeg
+
+# IDE
+.vscode/
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul
