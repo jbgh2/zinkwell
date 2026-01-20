@@ -18,3 +18,9 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul
