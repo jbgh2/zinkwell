@@ -111,22 +111,6 @@ bool KodakStepProtocol::parseResponse(const uint8_t* response, uint8_t* errorCod
     return (*errorCode == ERR_SUCCESS);
 }
 
-uint8_t KodakStepProtocol::parseBatteryLevel(const uint8_t* response) {
-    // Check response type - byte 6 indicates what kind of response this is
-    if (response[6] == 0x01) {
-        // GET_ACCESSORY_INFO response - battery level is in byte 12
-        return response[12];
-    } else if (response[6] == 0x04) {
-        // GET_BATTERY_LEVEL response type 0x04
-        // Byte 8 appears to be charging status (1=charging), not battery level
-        // Battery level should come from GET_ACCESSORY_INFO instead
-        // Return 0 to indicate this response doesn't contain battery percentage
-        return 0;
-    }
-    // Fallback to byte 8 for unknown response types
-    return response[8];
-}
-
 uint16_t KodakStepProtocol::parsePrintCount(const uint8_t* response) {
     // Print count is a 16-bit value in bytes 8-9 (big-endian)
     return (response[8] << 8) | response[9];

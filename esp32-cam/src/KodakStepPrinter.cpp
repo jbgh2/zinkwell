@@ -101,6 +101,7 @@ bool KodakStepPrinter::connectByName(const char* printerName) {
                 Serial.println("      ^ MATCH FOUND!");
                 targetAddress = device->getAddress();
                 found = true;
+                break;
             }
         }
     }
@@ -197,33 +198,49 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
     uint8_t command[KODAK_PACKET_SIZE];
     uint8_t response[KODAK_PACKET_SIZE];
 
-    // Use GET_ACCESSORY_INFO to get battery level - it's in byte 12 of that response
-    // The GET_BATTERY_LEVEL command (0x0E) returns charging status, not battery percentage
+    // Battery level is in byte 12 of GET_ACCESSORY_INFO response
+    // Note: GET_BATTERY_LEVEL (0x0E) returns charging status, not battery percentage
     protocol.buildGetAccessoryInfoPacket(command, status.is_slim_device);
-
-    Serial.println("Requesting battery level (via GET_ACCESSORY_INFO)...");
 
     if (!sendAndReceive(command, response)) {
         setError("Failed to get battery level");
         return false;
     }
 
-    // Copy raw response if requested
     if (rawResponse != nullptr) {
         memcpy(rawResponse, response, KODAK_PACKET_SIZE);
     }
 
-    // Debug output
-    Serial.println("Accessory info response:");
-    protocol.printPacketHex(response, KODAK_PACKET_SIZE);
-
-    // Battery level is in byte 12 of GET_ACCESSORY_INFO response
     *level = response[12];
     status.battery_level = *level;
 
-    Serial.print("Parsed battery level: ");
-    Serial.print(*level);
-    Serial.println("%");
+    delay_ms(100);
+    return true;
+}
+
+bool KodakStepPrinter::getChargingStatus(bool* isCharging, uint8_t* rawResponse) {
+    if (!isConnected()) {
+        setError("Not connected to printer");
+        return false;
+    }
+
+    uint8_t command[KODAK_PACKET_SIZE];
+    uint8_t response[KODAK_PACKET_SIZE];
+
+    // GET_BATTERY_LEVEL (0x0E) returns charging status in byte 8 (1 = charging)
+    protocol.buildGetBatteryLevelPacket(command);
+
+    if (!sendAndReceive(command, response)) {
+        setError("Failed to get charging status");
+        return false;
+    }
+
+    if (rawResponse != nullptr) {
+        memcpy(rawResponse, response, KODAK_PACKET_SIZE);
+    }
+
+    // Byte 8 contains charging status: 1 = charging, 0 = not charging
+    *isCharging = (response[8] == 1);
 
     delay_ms(100);
     return true;
@@ -316,14 +333,13 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
     }
 
     if (battery < KODAK_MIN_BATTERY_LEVEL) {
-        Serial.println("WARNING: Battery reported as low, but continuing anyway for testing...");
-        // setError("Battery too low to print");
-        // return false;
+        setError("Battery too low to print");
+        return false;
     }
 
     // Check paper status
     if (!checkPaperStatus()) {
-        Serial.println("Warning: Paper check failed, continuing anyway...");
+        return false;
     }
 
     // Send PRINT_READY command

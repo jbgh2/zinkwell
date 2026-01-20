@@ -70,7 +70,6 @@ public:
 
     // Response parsing methods
     bool parseResponse(const uint8_t* response, uint8_t* errorCode, uint8_t* dataOut = nullptr);
-    uint8_t parseBatteryLevel(const uint8_t* response);
     uint16_t parsePrintCount(const uint8_t* response);
     uint8_t parseAutoPowerOff(const uint8_t* response);
     uint8_t parseErrorCode(const uint8_t* response);
