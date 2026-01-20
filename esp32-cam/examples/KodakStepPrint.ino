@@ -24,7 +24,7 @@
 
 // Printer connection method - choose one:
 // Option 1: Connect by name (printer must be discoverable)
-#define USE_PRINTER_NAME true
+#define USE_PRINTER_NAME 1
 const char* PRINTER_NAME = "Step";  // Part of the printer name (e.g., "Step", "STEP")
 
 // Option 2: Connect by MAC address
@@ -159,7 +159,7 @@ void captureAndPrint() {
         Serial.print(battery);
         Serial.println("%");
 
-        if (battery < KODAK_MIN_BATTERY_LEVEL) {
+        if (battery < BTP_MIN_BATTERY_LEVEL) {
             Serial.println("ERROR: Battery too low to print!");
             return;
         }
