@@ -35,6 +35,9 @@ KodakStepPrinter printer;
 void setup() {
     Serial.begin(115200);
 
+    // Optional: Disable debug output for production
+    // printer.setDebugOutput(false);
+
     // Initialize Bluetooth
     if (!printer.begin("MyESP32")) {
         Serial.println("Bluetooth init failed");
@@ -65,8 +68,15 @@ void setup() {
     }
 }
 
+// Progress callback for UI updates
+void onPrintProgress(size_t bytesSent, size_t totalBytes) {
+    int percent = (bytesSent * 100) / totalBytes;
+    Serial.printf("Progress: %d%%\n", percent);
+}
+
 void printImage(uint8_t* jpegData, size_t jpegSize) {
-    if (printer.printImage(jpegData, jpegSize, 1)) {
+    // With progress callback
+    if (printer.printImage(jpegData, jpegSize, 1, onPrintProgress)) {
         Serial.println("Print started!");
     } else {
         Serial.println("Print failed: " + String(printer.getLastError()));
@@ -103,7 +113,7 @@ void printImage(uint8_t* jpegData, size_t jpegSize) {
 
 | Method | Description |
 |--------|-------------|
-| `printImage(data, size, copies)` | Print JPEG image data |
+| `printImage(data, size, copies, callback)` | Print JPEG image data with optional progress callback |
 
 #### Status
 
@@ -111,6 +121,13 @@ void printImage(uint8_t* jpegData, size_t jpegSize) {
 |--------|-------------|
 | `getStatus()` | Get PrinterStatus struct |
 | `getLastError()` | Get last error message |
+
+#### Configuration
+
+| Method | Description |
+|--------|-------------|
+| `setDebugOutput(enabled)` | Enable/disable Serial debug output |
+| `getDebugOutput()` | Check if debug output is enabled |
 
 ### Error Codes
 

@@ -4,6 +4,7 @@ KodakStepPrinter::KodakStepPrinter() {
     btSerial = nullptr;
     memset(&status, 0, sizeof(status));
     memset(lastError, 0, sizeof(lastError));
+    debugEnabled = true;  // Default to enabled for backward compatibility
 }
 
 KodakStepPrinter::~KodakStepPrinter() {
@@ -14,21 +15,50 @@ KodakStepPrinter::~KodakStepPrinter() {
     }
 }
 
+void KodakStepPrinter::setDebugOutput(bool enabled) {
+    debugEnabled = enabled;
+}
+
+bool KodakStepPrinter::getDebugOutput() const {
+    return debugEnabled;
+}
+
+void KodakStepPrinter::debugPrint(const char* msg) {
+    if (debugEnabled) {
+        Serial.print(msg);
+    }
+}
+
+void KodakStepPrinter::debugPrintln(const char* msg) {
+    if (debugEnabled) {
+        Serial.println(msg);
+    }
+}
+
 bool KodakStepPrinter::begin(const char* deviceName) {
     if (btSerial != nullptr) {
         delete btSerial;
+        btSerial = nullptr;
     }
 
-    btSerial = new BluetoothSerial();
+    btSerial = new (std::nothrow) BluetoothSerial();
+    if (btSerial == nullptr) {
+        setError("Failed to allocate BluetoothSerial (out of memory)");
+        return false;
+    }
 
     // Initialize in master mode (second param = true) to connect to printer
     if (!btSerial->begin(deviceName, true)) {
         setError("Failed to initialize Bluetooth");
+        delete btSerial;
+        btSerial = nullptr;
         return false;
     }
 
-    Serial.print("Bluetooth initialized as: ");
-    Serial.println(deviceName);
+    if (debugEnabled) {
+        Serial.print("Bluetooth initialized as: ");
+        Serial.println(deviceName);
+    }
     return true;
 }
 
@@ -38,17 +68,20 @@ bool KodakStepPrinter::connect(const char* printerAddress) {
         return false;
     }
 
-    Serial.print("Connecting to printer at address: ");
-    Serial.println(printerAddress);
+    if (debugEnabled) {
+        Serial.print("Connecting to printer at address: ");
+        Serial.println(printerAddress);
+    }
 
     if (!btSerial->connect(printerAddress)) {
         setError("Failed to connect to printer");
         return false;
     }
 
-    delay_ms(500);  // Initial connection delay
+    delay(500);  // Initial connection delay
+    yield();
     status.is_connected = true;
-    Serial.println("Connected to printer");
+    debugPrintln("Connected to printer");
     return true;
 }
 
@@ -58,82 +91,117 @@ bool KodakStepPrinter::connectByName(const char* printerName) {
         return false;
     }
 
-    Serial.println("\n=== Bluetooth Discovery ===");
-    Serial.print("Searching for device containing: ");
-    Serial.println(printerName);
+    if (printerName == nullptr) {
+        setError("Printer name cannot be null");
+        return false;
+    }
+
+    debugPrintln("\n=== Bluetooth Discovery ===");
+    if (debugEnabled) {
+        Serial.print("Searching for device containing: ");
+        Serial.println(printerName);
+    }
 
     // Scan for devices first
-    Serial.println("Starting Bluetooth scan...");
+    debugPrintln("Starting Bluetooth scan...");
     BTScanResults* scanResults = btSerial->discover(10000);  // 10 second scan
 
     if (scanResults == nullptr) {
-        Serial.println("ERROR: Scan returned null");
+        debugPrintln("ERROR: Scan returned null");
         setError("Bluetooth scan failed");
         return false;
     }
 
     int count = scanResults->getCount();
-    Serial.print("Found ");
-    Serial.print(count);
-    Serial.println(" Bluetooth devices:");
+    if (debugEnabled) {
+        Serial.print("Found ");
+        Serial.print(count);
+        Serial.println(" Bluetooth devices:");
+    }
 
     BTAddress targetAddress;
     bool found = false;
+
+    // Pre-convert search string to lowercase once (avoid repeated allocations)
+    size_t searchLen = strlen(printerName);
+    char* searchLower = (char*)alloca(searchLen + 1);  // Stack allocation
+    for (size_t i = 0; i <= searchLen; i++) {
+        searchLower[i] = tolower(printerName[i]);
+    }
+
     for (int i = 0; i < count; i++) {
         BTAdvertisedDevice* device = scanResults->getDevice(i);
         if (device) {
-            String name = device->getName().c_str();
-            String addr = device->getAddress().toString().c_str();
-            Serial.print("  [");
-            Serial.print(i);
-            Serial.print("] ");
-            Serial.print(addr);
-            Serial.print(" - \"");
-            Serial.print(name);
-            Serial.println("\"");
+            // Use C strings directly to avoid String heap allocations
+            const char* name = device->getName().c_str();
+            const char* addr = device->getAddress().toString().c_str();
 
-            // Check if this is our target printer (case-insensitive)
-            String nameLower = name;
-            String searchLower = printerName;
-            nameLower.toLowerCase();
-            searchLower.toLowerCase();
-            if (nameLower.indexOf(searchLower) >= 0) {
-                Serial.println("      ^ MATCH FOUND!");
+            if (debugEnabled) {
+                Serial.print("  [");
+                Serial.print(i);
+                Serial.print("] ");
+                Serial.print(addr);
+                Serial.print(" - \"");
+                Serial.print(name);
+                Serial.println("\"");
+            }
+
+            // Case-insensitive substring search without String allocations
+            size_t nameLen = strlen(name);
+            bool match = false;
+            for (size_t j = 0; j + searchLen <= nameLen && !match; j++) {
+                bool subMatch = true;
+                for (size_t k = 0; k < searchLen && subMatch; k++) {
+                    if (tolower(name[j + k]) != searchLower[k]) {
+                        subMatch = false;
+                    }
+                }
+                if (subMatch) {
+                    match = true;
+                }
+            }
+
+            if (match) {
+                debugPrintln("      ^ MATCH FOUND!");
                 targetAddress = device->getAddress();
                 found = true;
                 break;
             }
         }
+        yield();  // Allow other tasks during scan processing
     }
-    Serial.println("=== End Discovery ===\n");
+    debugPrintln("=== End Discovery ===\n");
 
     if (!found) {
         setError("Printer not found in scan");
         return false;
     }
 
-    Serial.print("Connecting to address: ");
-    Serial.println(targetAddress.toString().c_str());
+    if (debugEnabled) {
+        Serial.print("Connecting to address: ");
+        Serial.println(targetAddress.toString().c_str());
+    }
 
     // Connect using the BTAddress directly
     if (!btSerial->connect(targetAddress)) {
-        Serial.println("connect() returned false");
+        debugPrintln("connect() returned false");
         setError("Failed to connect to printer");
         return false;
     }
 
-    Serial.println("connect() returned true, waiting...");
-    delay_ms(1000);  // Initial connection delay
+    debugPrintln("connect() returned true, waiting...");
+    delay(1000);  // Initial connection delay
+    yield();
 
     // Verify connection
     if (!btSerial->connected()) {
-        Serial.println("connected() check failed after connect()");
+        debugPrintln("connected() check failed after connect()");
         setError("Connection lost after connect");
         return false;
     }
 
     status.is_connected = true;
-    Serial.println("Connected to printer successfully!");
+    debugPrintln("Connected to printer successfully!");
     return true;
 }
 
@@ -141,7 +209,7 @@ void KodakStepPrinter::disconnect() {
     if (btSerial != nullptr && status.is_connected) {
         btSerial->disconnect();
         status.is_connected = false;
-        Serial.println("Disconnected from printer");
+        debugPrintln("Disconnected from printer");
     }
 }
 
@@ -161,8 +229,10 @@ bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
     // Send GET_ACCESSORY_INFO
     protocol.buildGetAccessoryInfoPacket(command, isSlimDevice);
 
-    Serial.println("Sending GET_ACCESSORY_INFO...");
-    protocol.printPacketHex(command, KODAK_PACKET_SIZE);
+    debugPrintln("Sending GET_ACCESSORY_INFO...");
+    if (debugEnabled) {
+        protocol.printPacketHex(command, KODAK_PACKET_SIZE);
+    }
 
     if (!sendAndReceive(command, response)) {
         setError("Failed to get accessory info");
@@ -184,12 +254,18 @@ bool KodakStepPrinter::initialize(bool isSlimDevice, uint8_t* rawResponse) {
     status.is_slim_device = isSlimDevice;
     status.error_code = ERR_SUCCESS;
 
-    Serial.println("Printer initialized successfully");
-    delay_ms(500);  // Wait after initialization
+    debugPrintln("Printer initialized successfully");
+    delay(500);  // Wait after initialization
+    yield();
     return true;
 }
 
 bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
+    if (level == nullptr) {
+        setError("Output parameter 'level' cannot be null");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -214,11 +290,17 @@ bool KodakStepPrinter::getBatteryLevel(uint8_t* level, uint8_t* rawResponse) {
     *level = response[12];
     status.battery_level = *level;
 
-    delay_ms(100);
+    delay(100);
+    yield();
     return true;
 }
 
 bool KodakStepPrinter::getChargingStatus(bool* isCharging, uint8_t* rawResponse) {
+    if (isCharging == nullptr) {
+        setError("Output parameter 'isCharging' cannot be null");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -242,7 +324,8 @@ bool KodakStepPrinter::getChargingStatus(bool* isCharging, uint8_t* rawResponse)
     // Byte 8 contains charging status: 1 = charging, 0 = not charging
     *isCharging = (response[8] == 1);
 
-    delay_ms(100);
+    delay(100);
+    yield();
     return true;
 }
 
@@ -257,7 +340,7 @@ bool KodakStepPrinter::checkPaperStatus() {
 
     protocol.buildGetPageTypePacket(command);
 
-    Serial.println("Checking paper status...");
+    debugPrintln("Checking paper status...");
 
     if (!sendAndReceive(command, response)) {
         setError("Failed to check paper status");
@@ -271,12 +354,18 @@ bool KodakStepPrinter::checkPaperStatus() {
         return false;
     }
 
-    Serial.println("Paper status OK");
-    delay_ms(100);
+    debugPrintln("Paper status OK");
+    delay(100);
+    yield();
     return true;
 }
 
 bool KodakStepPrinter::getPrintCount(uint16_t* count) {
+    if (count == nullptr) {
+        setError("Output parameter 'count' cannot be null");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -294,11 +383,17 @@ bool KodakStepPrinter::getPrintCount(uint16_t* count) {
 
     *count = protocol.parsePrintCount(response);
 
-    delay_ms(100);
+    delay(100);
+    yield();
     return true;
 }
 
 bool KodakStepPrinter::getAutoPowerOff(uint8_t* minutes) {
+    if (minutes == nullptr) {
+        setError("Output parameter 'minutes' cannot be null");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -316,11 +411,23 @@ bool KodakStepPrinter::getAutoPowerOff(uint8_t* minutes) {
 
     *minutes = protocol.parseAutoPowerOff(response);
 
-    delay_ms(100);
+    delay(100);
+    yield();
     return true;
 }
 
-bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint8_t numCopies) {
+bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint8_t numCopies,
+                                   KodakProgressCallback progressCallback) {
+    if (jpegData == nullptr) {
+        setError("Image data cannot be null");
+        return false;
+    }
+
+    if (dataSize == 0) {
+        setError("Image data size cannot be zero");
+        return false;
+    }
+
     if (!isConnected()) {
         setError("Not connected to printer");
         return false;
@@ -348,11 +455,13 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
 
     protocol.buildPrintReadyPacket(command, dataSize, numCopies);
 
-    Serial.println("Sending PRINT_READY...");
-    Serial.print("Image size: ");
-    Serial.print(dataSize);
-    Serial.print(" bytes, copies: ");
-    Serial.println(numCopies);
+    debugPrintln("Sending PRINT_READY...");
+    if (debugEnabled) {
+        Serial.print("Image size: ");
+        Serial.print(dataSize);
+        Serial.print(" bytes, copies: ");
+        Serial.println(numCopies);
+    }
 
     if (!sendAndReceive(command, response)) {
         setError("Failed to send PRINT_READY");
@@ -366,63 +475,88 @@ bool KodakStepPrinter::printImage(const uint8_t* jpegData, size_t dataSize, uint
         return false;
     }
 
-    delay_ms(100);
+    delay(100);
+    yield();
 
     // Transfer image data
-    Serial.println("Transferring image data...");
-    if (!transferImageData(jpegData, dataSize)) {
+    debugPrintln("Transferring image data...");
+    if (!transferImageData(jpegData, dataSize, progressCallback)) {
         setError("Failed to transfer image data");
         return false;
     }
 
-    Serial.println("Image transfer complete!");
-    Serial.println("Printer should start printing now...");
+    debugPrintln("Image transfer complete!");
+    debugPrintln("Printer should start printing now...");
 
     return true;
 }
 
-bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size) {
+bool KodakStepPrinter::transferImageData(const uint8_t* data, size_t size,
+                                          KodakProgressCallback progressCallback) {
     size_t offset = 0;
     size_t chunkNum = 0;
     size_t totalChunks = (size + KODAK_CHUNK_SIZE - 1) / KODAK_CHUNK_SIZE;
+
+    // Check connection once at start, then use skipConnectionCheck for performance
+    if (!isConnected()) {
+        return false;
+    }
 
     while (offset < size) {
         size_t remaining = size - offset;
         size_t chunkSize = (remaining < KODAK_CHUNK_SIZE) ? remaining : KODAK_CHUNK_SIZE;
 
         chunkNum++;
-        Serial.print("Sending chunk ");
-        Serial.print(chunkNum);
-        Serial.print("/");
-        Serial.print(totalChunks);
-        Serial.print(" (");
-        Serial.print(chunkSize);
-        Serial.println(" bytes)");
+        if (debugEnabled) {
+            Serial.print("Sending chunk ");
+            Serial.print(chunkNum);
+            Serial.print("/");
+            Serial.print(totalChunks);
+            Serial.print(" (");
+            Serial.print(chunkSize);
+            Serial.println(" bytes)");
+        }
 
-        if (!sendCommand(&data[offset], chunkSize)) {
-            Serial.println("Failed to send chunk");
+        // Use skipConnectionCheck=true since we checked at start of transfer
+        if (!sendCommand(&data[offset], chunkSize, true)) {
+            debugPrintln("Failed to send chunk");
             return false;
         }
 
         offset += chunkSize;
-        delay_ms(KODAK_INTER_CHUNK_DELAY_MS);
+
+        // Call progress callback if provided
+        if (progressCallback != nullptr) {
+            progressCallback(offset, size);
+        }
+
+        delay(KODAK_INTER_CHUNK_DELAY_MS);
+        yield();  // Allow other tasks between chunks
     }
 
     return true;
 }
 
-bool KodakStepPrinter::sendCommand(const uint8_t* command, size_t length) {
-    if (btSerial == nullptr || !isConnected()) {
+bool KodakStepPrinter::sendCommand(const uint8_t* command, size_t length, bool skipConnectionCheck) {
+    if (btSerial == nullptr) {
+        return false;
+    }
+
+    // Only check connection if not skipped (for performance in hot path)
+    if (!skipConnectionCheck && !btSerial->connected()) {
+        status.is_connected = false;
         return false;
     }
 
     size_t written = btSerial->write(command, length);
     if (written != length) {
-        Serial.print("Warning: Only wrote ");
-        Serial.print(written);
-        Serial.print(" of ");
-        Serial.print(length);
-        Serial.println(" bytes");
+        if (debugEnabled) {
+            Serial.print("Warning: Only wrote ");
+            Serial.print(written);
+            Serial.print(" of ");
+            Serial.print(length);
+            Serial.println(" bytes");
+        }
         return false;
     }
 
@@ -430,7 +564,8 @@ bool KodakStepPrinter::sendCommand(const uint8_t* command, size_t length) {
 }
 
 bool KodakStepPrinter::receiveResponse(uint8_t* response, uint32_t timeoutMs) {
-    if (btSerial == nullptr || !isConnected()) {
+    if (btSerial == nullptr || !btSerial->connected()) {
+        status.is_connected = false;
         return false;
     }
 
@@ -438,8 +573,9 @@ bool KodakStepPrinter::receiveResponse(uint8_t* response, uint32_t timeoutMs) {
     size_t bytesRead = 0;
 
     while (bytesRead < KODAK_PACKET_SIZE) {
+        // Unsigned subtraction handles millis() overflow correctly
         if (millis() - startTime > timeoutMs) {
-            Serial.println("Response timeout");
+            debugPrintln("Response timeout");
             return false;
         }
 
@@ -447,11 +583,14 @@ bool KodakStepPrinter::receiveResponse(uint8_t* response, uint32_t timeoutMs) {
             response[bytesRead++] = btSerial->read();
         } else {
             delay(10);  // Small delay to avoid busy waiting
+            yield();    // Allow other tasks
         }
     }
 
-    Serial.println("Received response:");
-    protocol.printPacketHex(response, KODAK_PACKET_SIZE);
+    if (debugEnabled) {
+        Serial.println("Received response:");
+        protocol.printPacketHex(response, KODAK_PACKET_SIZE);
+    }
 
     return true;
 }
@@ -464,21 +603,19 @@ bool KodakStepPrinter::sendAndReceive(const uint8_t* command, uint8_t* response)
     return receiveResponse(response);
 }
 
-KodakStepProtocol::PrinterStatus KodakStepPrinter::getStatus() {
+KodakStepProtocol::PrinterStatus KodakStepPrinter::getStatus() const {
     return status;
 }
 
-const char* KodakStepPrinter::getLastError() {
+const char* KodakStepPrinter::getLastError() const {
     return lastError;
 }
 
 void KodakStepPrinter::setError(const char* error) {
     strncpy(lastError, error, sizeof(lastError) - 1);
     lastError[sizeof(lastError) - 1] = '\0';
-    Serial.print("Error: ");
-    Serial.println(error);
-}
-
-void KodakStepPrinter::delay_ms(uint32_t ms) {
-    delay(ms);
+    if (debugEnabled) {
+        Serial.print("Error: ");
+        Serial.println(error);
+    }
 }

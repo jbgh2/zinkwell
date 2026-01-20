@@ -5,8 +5,8 @@
 #include "BluetoothSerial.h"
 #include "KodakStepProtocol.h"
 
-// SPP UUID for Kodak Step printers
-#define KODAK_SPP_UUID "00001101-0000-1000-8000-00805F9B34FB"
+// Progress callback for image transfer: (bytesSent, totalBytes)
+typedef void (*KodakProgressCallback)(size_t bytesSent, size_t totalBytes);
 
 /**
  * High-level interface for Kodak Step Printer
@@ -30,6 +30,10 @@ public:
     KodakStepPrinter();
     ~KodakStepPrinter();
 
+    // Prevent copying (contains heap-allocated BluetoothSerial)
+    KodakStepPrinter(const KodakStepPrinter&) = delete;
+    KodakStepPrinter& operator=(const KodakStepPrinter&) = delete;
+
     // Connection management
     bool begin(const char* deviceName = "ESP32-Kodak");
     bool connect(const char* printerAddress);
@@ -46,29 +50,36 @@ public:
     bool getAutoPowerOff(uint8_t* minutes);
 
     // Printing
-    bool printImage(const uint8_t* jpegData, size_t dataSize, uint8_t numCopies = 1);
+    bool printImage(const uint8_t* jpegData, size_t dataSize, uint8_t numCopies = 1,
+                    KodakProgressCallback progressCallback = nullptr);
 
     // Status
-    KodakStepProtocol::PrinterStatus getStatus();
-    const char* getLastError();
+    KodakStepProtocol::PrinterStatus getStatus() const;
+    const char* getLastError() const;
+
+    // Configuration
+    void setDebugOutput(bool enabled);
+    bool getDebugOutput() const;
 
 private:
     BluetoothSerial* btSerial;
     KodakStepProtocol protocol;
     KodakStepProtocol::PrinterStatus status;
     char lastError[128];
+    bool debugEnabled;
 
-    // Communication helpers
-    bool sendCommand(const uint8_t* command, size_t length);
+    // Communication helpers (skipConnectionCheck for internal use after already checking)
+    bool sendCommand(const uint8_t* command, size_t length, bool skipConnectionCheck = false);
     bool receiveResponse(uint8_t* response, uint32_t timeoutMs = KODAK_COMMAND_TIMEOUT_MS);
     bool sendAndReceive(const uint8_t* command, uint8_t* response);
 
     // Image transfer
-    bool transferImageData(const uint8_t* data, size_t size);
+    bool transferImageData(const uint8_t* data, size_t size, KodakProgressCallback progressCallback);
 
     // Utility
     void setError(const char* error);
-    void delay_ms(uint32_t ms);
+    void debugPrint(const char* msg);
+    void debugPrintln(const char* msg);
 };
 
 #endif // KODAK_STEP_PRINTER_H
