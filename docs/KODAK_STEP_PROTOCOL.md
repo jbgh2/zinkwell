@@ -1,8 +1,8 @@
 # Kodak Step Printer Communication Protocol
 
-**Version:** 1.0
-**Date:** 2026-01-18
-**Status:** Reverse-Engineered from Kodak Step Touch APK (com.kodak.steptouch)
+**Version:** 1.1
+**Date:** 2026-01-19
+**Status:** Reverse-Engineered from Kodak Step Touch APK (com.kodak.steptouch) and verified with hardware testing
 
 ## Table of Contents
 
@@ -96,9 +96,9 @@ ASCII:   ESC * C A
 
 | Cmd (Byte 6) | Hex  | Name                 | Description                    |
 |--------------|------|----------------------|--------------------------------|
-| 1            | 0x01 | GET_ACCESSORY_INFO   | Initialize/handshake           |
+| 1            | 0x01 | GET_ACCESSORY_INFO   | Initialize/handshake **(also returns battery level in byte 12)** |
 | 13           | 0x0D | GET_PAGE_TYPE        | Query paper type               |
-| 14           | 0x0E | GET_BATTERY_LEVEL    | Query battery status           |
+| 14           | 0x0E | GET_BATTERY_LEVEL    | Query **charging status** (NOT battery %) |
 | 15           | 0x0F | GET_PRINT_COUNT      | Query total prints             |
 | 16           | 0x10 | GET_AUTO_POWER_OFF   | Query auto power-off setting   |
 | 0            | 0x00 | PRINT_READY          | Prepare for print              |
@@ -154,7 +154,10 @@ Data:   1B 2A 43 41 00 02 01 00 00 00 ... (rest zeros)
 
 ---
 
-### 4.4 GET_BATTERY_LEVEL
+### 4.4 GET_BATTERY_LEVEL (Charging Status)
+
+> **IMPORTANT:** This command does NOT return battery percentage. See Section 5.4 for details.
+> To get battery percentage, use GET_ACCESSORY_INFO and read byte 12.
 
 **Packet (34 bytes):**
 
@@ -163,11 +166,13 @@ Offset: 00 01 02 03 04 05 06 07 08 ...
 Data:   1B 2A 43 41 00 00 0E 00 00 ... (rest zeros)
 ```
 
-**Full hex string:** `1B2A4341000E0000000000000000000000000000000000000000000000000000000000`
+**Full hex string:** `1B2A434100000E00000000000000000000000000000000000000000000000000000000`
 
 | Offset | Value | Description |
 |--------|-------|-------------|
 | 6 | 0x0E | Command: GET_BATTERY_LEVEL (14) |
+
+**Response:** Returns response type 0x04 (not 0x0E). Byte 8 contains charging status, not battery percentage.
 
 ---
 
@@ -343,21 +348,72 @@ ELSE error occurred (see error code table)
 
 | Byte 6 | Byte 7 | Description |
 |--------|--------|-------------|
-| 0x01 | 0x00 | Accessory info response |
-| 0x0E | - | Battery level (value in byte 8) |
+| 0x01 | 0x02 | Accessory info response (contains battery level) |
+| 0x04 | 0x00 | Charging status response (from GET_BATTERY_LEVEL command) |
 | 0x0D | - | Page type response |
 | 0x10 | - | Auto power off response |
 | 0x00 | 0x00 | Upload ready from printer |
 | 0x00 | 0x02 | Upload request from printer |
 
-### 5.4 Battery Level Response
+### 5.4 Battery Level and Charging Status
 
-When command 0x0E returns:
-- Byte 8 contains battery percentage (0-100)
+> **CORRECTION (v1.1):** The GET_BATTERY_LEVEL command (0x0E) does NOT return battery percentage.
+> Instead, it returns a response with type 0x04 containing charging status.
+
+**To get battery percentage:** Use GET_ACCESSORY_INFO and read **byte 12**.
+
+**GET_BATTERY_LEVEL (0x0E) Response:**
+```
+1B 2A 43 41 01 11 04 00 CS 00 00 00 ...
+                  ^^    ^^
+                  |     +-- Byte 8: Charging Status (1=charging, 0=not charging)
+                  +-------- Byte 6: Response type 0x04 (NOT 0x0E)
+```
+
+**GET_ACCESSORY_INFO (0x01) Response:**
+```
+1B 2A 43 41 01 11 01 02 ER 00 ?? ?? BL 00 00 MA MA MA MA MA MA ...
+                        ^^       ^^          ^^^^^^^^^^^^^^^^^
+                        |        |           +-- Bytes 15-20: MAC Address
+                        |        +-------------- Byte 12: Battery Level (0-100%)
+                        +----------------------- Byte 8: Error code
+```
+
+| Field | Location | Description |
+|-------|----------|-------------|
+| Battery Level | GET_ACCESSORY_INFO byte 12 | 0-100% |
+| Charging Status | GET_BATTERY_LEVEL byte 8 | 1=charging, 0=not charging |
+| MAC Address | GET_ACCESSORY_INFO bytes 15-20 | Printer Bluetooth address |
 
 ### 5.5 Accessory Info Response
 
-Contains device information in payload bytes 9-33.
+Full response structure (34 bytes):
+
+```
+Offset  Value   Description
+──────────────────────────────────────────────────
+0-3     Header  1B 2A 43 41
+4       0x01    Response flag
+5       0x11    Response flag
+6       0x01    Response type (echoes command)
+7       0x02    Sub-type
+8       Error   Error code (0x00 = success)
+9       0x00    Reserved
+10      ??      Unknown
+11      ??      Unknown
+12      BL      Battery level (0-100%)
+13      0x00    Reserved
+14      0x00    Reserved
+15-20   MAC     Printer Bluetooth MAC address (6 bytes)
+21      0x01    Unknown
+22      0x00    Reserved
+23      0x06    Unknown
+24-25   0x00    Reserved
+26      0x07    Unknown
+27      0x03    Unknown
+28      0xF5    Unknown
+29-33   0x00    Reserved
+```
 
 ---
 
@@ -407,11 +463,10 @@ Contains device information in payload bytes 9-33.
    IF response[8] != 0x00 THEN error, abort
    WAIT 500ms
 
-3. SEND GET_BATTERY_LEVEL packet
-   WAIT for response
-   battery_level = response[8]
+3. GET BATTERY LEVEL (from accessory info already received)
+   battery_level = accessory_response[12]  // Byte 12, NOT byte 8!
    IF battery_level < 30 THEN error "low battery", abort
-   WAIT 100ms
+   // Note: GET_BATTERY_LEVEL (0x0E) returns charging status, not percentage
 
 4. SEND GET_PAGE_TYPE packet
    WAIT for response
@@ -643,4 +698,5 @@ MIN_BATTERY_LEVEL  = 30      (percent)
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 1.1 | 2026-01-19 | Corrected battery level location (byte 12 of GET_ACCESSORY_INFO, not byte 8 of GET_BATTERY_LEVEL). Added charging status documentation. Verified with hardware testing. |
 | 1.0 | 2026-01-18 | Initial protocol specification |
