@@ -11,6 +11,19 @@
 /**
  * High-level interface for Kodak Step Printer
  * Manages Bluetooth connection, protocol flow, and image transfer
+ *
+ * Supported printers:
+ *   - Kodak Step
+ *   - Kodak Step Touch
+ *   - Kodak Step Slim
+ *   - Kodak Step Touch Snap 2
+ *
+ * Basic usage:
+ *   KodakStepPrinter printer;
+ *   printer.begin("MyDevice");
+ *   printer.connectByName("Step");
+ *   printer.initialize();
+ *   printer.printImage(jpegData, jpegSize);
  */
 class KodakStepPrinter {
 public:

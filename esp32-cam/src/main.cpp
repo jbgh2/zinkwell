@@ -4,7 +4,7 @@
  */
 
 #include <Arduino.h>
-#include "KodakStepPrinter.h"
+#include <KodakStep.h>
 #include "ESP32CameraHelper.h"
 
 // Configuration
